@@ -8,9 +8,5 @@ An interactive Streamlit application designed to fetch, process, and visualize h
 * **Dynamic Visuals:** Interactive line charts powered by Plotly for analyzing trends.
 * **Cross-Platform Ready:** Includes specific patches for **Streamlit Lite (WASM)** and browser-based execution environments.
 
-## 🛠️ Installation
-
-1. **Clone the repository:**
-   ```bash
-   git clone [https://github.com/yourusername/metar-visualizer.git](https://github.com/yourusername/metar-visualizer.git)
-   cd metar-visualizer
+## 🛠️ Link
+https://getmetarmainpy-g4mm5mqh8woajydcjzegux.streamlit.app/
