@@ -1,0 +1,110 @@
+import streamlit as st
+import pandas as pd
+import requests
+from io import StringIO
+import plotly.express as px
+from datetime import datetime, timedelta
+
+# --- YOUR ORIGINAL FUNCTIONS ---
+
+def build_URL_metars(st_year, st_mon, st_day, en_year, en_mon, en_day, stations, data_li=['sknt','vsby'], latlon='yes'):
+    url1 = 'https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py?'
+    stations_str = ''.join(['station='+st + '&' for st in stations])
+    data_str = ''.join('data='+dat + '&' for dat in data_li)
+    st_day_str = f'year1={str(st_year)}&month1={str(st_mon)}&day1={str(st_day)}&'
+    en_day_str = f'year2={str(en_year)}&month2={str(en_mon)}&day2={str(en_day)}&'
+    url2 = f'tz=Etc%2FUTC&format=onlycomma&latlon={latlon}&elev=no&missing=M&trace=T&direct=no&report_type=3&report_type=4'
+    url_final = f'{url1}{stations_str}data=metar&{data_str}{st_day_str}{en_day_str}{url2}'
+    return url_final
+
+def fetch_and_process_csv(url):
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        df = pd.read_csv(StringIO(response.text))
+        # Ensure valid time is converted to datetime objects
+        if 'valid' in df.columns:
+            df['valid'] = pd.to_datetime(df['valid'])
+        return df
+    except Exception as e:
+        st.error(f"Error fetching data: {e}")
+        return pd.DataFrame()
+
+# --- STREAMLIT UI ---
+
+st.set_page_config(page_title="METAR Visualizer", layout="wide")
+st.title("✈️ METAR Data Explorer")
+
+# Sidebar - User Inputs
+with st.sidebar:
+    st.header("Configuration")
+    
+    # Station Selection
+    icao_input = st.text_input("Enter ICAO codes (comma separated)", "LKPR, EDDM, KJFK")
+    stations = [s.strip().upper() for s in icao_input.split(",")]
+    
+    # Date Selection
+    today = datetime.now()
+    yesterday = today - timedelta(days=1)
+    date_range = st.date_input("Select Date Range", value=(yesterday, today))
+    
+    # Data Elements to Fetch
+    data_options = {
+        'Wind Speed (kts)': 'sknt',
+        'Visibility (miles)': 'vsby',
+        'Temperature (F)': 'tmpf',
+        'Dew Point (F)': 'dwpf',
+        'Altimeter (in)': 'alti'
+    }
+    selected_labels = st.multiselect("Data Elements", list(data_options.keys()), default=['Wind Speed (kts)', 'Visibility (miles)'])
+    selected_codes = [data_options[label] for label in selected_labels]
+
+# Execution
+if len(date_range) == 2:
+    st_dt, en_dt = date_range
+    
+    # Build URL and Fetch
+    api_url = build_URL_metars(
+        st_dt.year, st_dt.month, st_dt.day,
+        en_dt.year, en_dt.month, en_dt.day,
+        stations, data_li=selected_codes
+    )
+    
+    with st.spinner('Fetching data from IEM...'):
+        df = fetch_and_process_csv(api_url)
+
+    if not df.empty:
+        # --- Visualization Section ---
+        st.subheader("Interactive Visualization")
+        
+        col1, col2 = st.columns([1, 3])
+        
+        with col1:
+            # Requirements: ICAO Dropdown & Element Dropdown
+            selected_station = st.selectbox("Select Station to View", df['station'].unique())
+            plot_element = st.selectbox("Select Element to Plot", selected_codes)
+        
+        with col2:
+            # Filter data for the specific station
+            station_df = df[df['station'] == selected_station].sort_values('valid')
+            
+            if not station_df[plot_element].dropna().empty:
+                fig = px.line(
+                    station_df, 
+                    x='valid', 
+                    y=plot_element, 
+                    title=f"{plot_element} Trends for {selected_station}",
+                    labels={'valid': 'Time (UTC)', plot_element: plot_element},
+                    template="plotly_dark"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning(f"No data available for {plot_element} at this station.")
+
+        # Display raw data table
+        with st.expander("View Raw Data Table"):
+            st.dataframe(df)
+    else:
+        st.info("No data found for the selected parameters.")
+else:
+    st.info("Please select a start and end date.")
